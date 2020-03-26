@@ -1,0 +1,28 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1576208216961.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "9C701259",
+    "lastKnownWriteTime" : 1585188885,
+    "last_content_update" : 1585188885174,
+    "path" : "~/Data_Science/Data_Science_1/Final_Project/EDA_long_form.Rmd",
+    "project_path" : "EDA_long_form.Rmd",
+    "properties" : {
+        "cursorPosition" : "480,4",
+        "docOutlineVisible" : "1",
+        "last_setup_crc32" : "2F6E567D4b1e45a1",
+        "scrollLine" : "474",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

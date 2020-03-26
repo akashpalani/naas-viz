@@ -1,0 +1,119 @@
+---
+title: "National Asian American Voter Survey: Long Form EDA"
+subtitle: "STAT 301-1 Data Science I Final Project"
+author: "Akash Palani"
+date: "12/12/2019"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    highlight: "tango"
+    code_folding: hide
+    
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, results="hide")
+```
+Pacakges loaded at start, code is folded. 
+```{r packages, results="hide"}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(choroplethrMaps)
+library(stringr)
+```
+
+## Introduction
+Asian Americans are a rapidly growing demographic group, and have the potential to wield significant political power. However, this EDA exposes a few key findings. First, there are some general trends that can be identified: although Asian Americans overwhelmingly report feeling disengaged from American civic and political life, a majority of respondents indicated engaging in two civic activties. Second, and perhaps more importantly: Asian Americans should not be treated as a monolith. Different ethnicities have different stances on a variety of policy issues, and breaking ethnicity down by gender, birthplace, and level of education reveals even more variation. 
+
+## Key Finding: Engagement
+```{r}
+#Rename data. Copy made to preserve original data in case something goes wrong. 
+load("data.rda")
+all_data_raw <- da37024.0001
+#Drop White, Black, and Latino from ethnicities to prepare data for visualization. 
+ethnicity_data <- all_data_raw %>%
+  #disinclude non-Asian races and ethnicites
+  filter(!RACEETH %in% c("(03) White", "(04) Black", "(06) Latino")) %>%
+  mutate(ethnicity = as.factor(str_sub(RACEETH, 6))) %>%
+  #rename ethnicities for higher quality plots
+  mutate(ethnicity = fct_recode(ethnicity, 
+                                "Vietnamese" = "vietnamese", 
+                                "Korean" = "korean", 
+                                "NHPI" = "NHPI",
+                                "Japaense" = "japanese", 
+                                "Hmong" = "hmong", 
+                                "Filipino" = "filipino", 
+                                "Chinese" = "chinese", 
+                                "Cambodian" = "cambodian", 
+                                "Asian Indian" = "asnindian")) %>%
+  #Black, White, and Latino have become NA values. Drop them. 
+  drop_na(ethnicity)
+
+#Clean up education factor
+ethnicity_data <- ethnicity_data %>%
+  #I will be repeating this substring operation on almost every plot. The data have a "(##)" prefix with each entry, a numerical indicator of the response. I don't need this in my plots, so I do this substring operation to remove it. 
+  mutate(EDUC3 = as.factor(str_sub(EDUC3, 5)))
+
+#engagement
+#Q5_1_01 through 9
+ethnicity_data %>%
+  #the response to each category was in a different column, so first select the relevant columns
+  select(c(ethnicity, Q5_1_01, Q5_1_02, Q5_1_03, Q5_1_04,Q5_1_05,Q5_1_06, Q5_1_08, Q5_1_09)) %>% 
+  #gather responses into one column so that they can be plotted
+  gather("Question", ethnicity) %>%
+  #codebook
+  replace_na(list(ethnicity = "(3) Don't Know/Refused")) %>%
+  #standard cleaning, described at beginning
+  mutate(ethnicity = as.factor(str_sub(ethnicity, 5))) %>%
+  #convert question to factor, levels imputed from data work well
+  mutate(Question = as.factor(Question)) %>%
+  #appropriately label each level so that they can be interpreted without the codebook
+  mutate(Question = fct_recode(Question, 
+                               "Discussed politics w/ \nfamily & friends" = "Q5_1_01",  
+                               "Contributed money to a candidate, political party, \nor some other campaign organization" = "Q5_1_02", 
+                               "Contacted your representative \nor a government official" = "Q5_1_03", 
+                               "Worked with others in your community \nto solve a problem" = "Q5_1_04", 
+                               "Attended a protest march, \ndemonstration, or rally" = "Q5_1_05", 
+                               "Signed a petition" = "Q5_1_06", 
+                               "Attended a public meeting, \nsuch as for school board \nor city council" = "Q5_1_08", 
+                               "Donated money to a religious \nor charitable cause " = "Q5_1_09")) %>%
+  ggplot(mapping = aes(Question, fill = ethnicity)) + 
+    geom_bar() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    #i picked gray for NA, green for yes, and red for no to make legibility higher
+    scale_fill_manual(values=c("#808080", "#ff0000", "#00ff00")) +
+    labs(fill = "Response") +
+    ggtitle("Engagement") 
+```
+<br>
+As is explored in the long form EDA, feelings of engagement in civic and political life tend to be low among Asian Americans. The two civic activities they seemed to be most involved in are discussing politics in comfortable, familial/friendly environments, and making donations to charitable/religious/community organizations. This is a significant exception to the trend of disengagement, and should be investigated further
+
+## Key finding: Education and Party Affiliation
+```{r}
+#Party Affiliation by level of education 
+ethnicity_data %>% 
+  mutate(Q7_1 = as.character(Q7_1)) %>%
+  #codebook
+  replace_na(list(Q7_1 = "(88) Don't Know/Refused")) %>%
+  mutate(Q7_1 = as.factor(Q7_1)) %>%
+  mutate(Q7_1 = fct_recode(Q7_1, 
+                           "(05) Don't think in terms of parties" = "(05) DO NOT READ  Do not think in terms of political parties", 
+                           "(04) Other party" = "(04) Other party  SPECIFY")) %>%
+  mutate(Q7_1 = as.character(Q7_1)) %>%
+  mutate(Q7_1 = str_sub(Q7_1, 5)) %>%
+  ggplot(aes(x = EDUC3, fill = Q7_1)) + 
+  geom_bar(position = "fill", alpha = 0.8) + 
+  #facet by ethnicity so we can look at variation between levels of education within each group
+  facet_wrap(~ethnicity) +
+  labs(fill = "Response") +
+  ggtitle("Party Affiliation by Level of Education and Ethnicity") +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br>
+When I facet by level of education, even more interesting patterns emerge. Conventional wisdom holds that higher levels of education are associated with a higher likelihood to vote for left-leaning parties like the Democrats in the United States. However, some notable exceptions to that trend emerge in this plot. Filipino Americans stand out as being less likely to vote Democrat with higher levels of education, while Indian Americans' party affiliation seems to stay more steady at each level. Levels of income and the number of voters in each category are amongst the possible explanations for these trends. 
+
+

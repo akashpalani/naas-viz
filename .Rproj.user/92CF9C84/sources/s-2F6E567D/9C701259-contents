@@ -1,0 +1,594 @@
+---
+title: 'National Asian American Voter Survey: Long Form EDA'
+author: "Akash Palani"
+date: "12/12/2019"
+output:
+  html_document:
+    code_folding: hide
+    highlight: tango
+    toc: yes
+    toc_float: yes
+subtitle: STAT 301-1 Data Science I Final Project
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, results="hide")
+library(tidyverse)
+library(skimr)
+library(tidyr)
+library(janitor)
+library(broom)
+library(MASS)
+library(tidyverse)
+library(modelr)
+library(janitor)
+library(skimr)
+library(broom)
+library(corrplot)
+library(class)
+```
+Pacakges loaded at start, code is folded. 
+```{r packages, results="hide"}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(choroplethrMaps)
+library(stringr)
+```
+
+
+## Introduction
+I performed an exploratory data analysis on the National Asian American Voter Survey, 2016 (NAAS16). The survey is conducted regularly, with 2016 being the most recent  publicly available data, and is led by Dr. S. Karthick Ramakrishnan of the University of California-Riverside. As Asian Americans become a rapidly growing political force and demographic group in the United States, it becomes easier to gather data on them and formulate a more granular understanding of their politics. NAAS16 collected a vast amount of information about almost 5,000 surveyed voters; in my analysis, I focus on the following themes: demographics, party affiliations, stances on important issues, and political/civic behavior. I explore extensively the relationships between various aspects of political life and demographic indicators. In summary, I find that although there are definitely patters in Asian American political behavior, we should be cautious about treating them as a political monolith. Even amongst those broader patters, there are exceptions; ethnicity, place of birth, level of education, and gender have varying degrees of impact on the many aspects of the political lives of Asian Americans. The rest of this document is organized into sections for each theme discussed above. Those sections are preceded by a brief analysis of the geographic distribution of survey respondents. 
+<br>
+Some general notes: missing values in the data are explained in the codebook as respondents that answered "Don't know" or "Refused". Thus, for the most party, they have been coded to appear in plots as such. However, there are a few notable exceptions, with large amounts of unexplained missing values. These cases have been noted in the analysis of the plots in which they are relevant. 
+<br><br>
+
+## Geographic Distribution
+To check how well-represented Asian Americans are geographically in the data set, I look for missing states. 
+<br>
+```{r respondents per state and missing states}
+#Rename data. Copy made to preserve original data in case something goes wrong. 
+load("data.rda")
+all_data_raw <- da37024.0001
+
+#Respondents per state 
+respondents_per_state <- all_data_raw %>%
+  group_by(RSTATE) %>%
+  count()
+
+#Find missing states
+states <- tibble(state.abb)
+anti_join(states, respondents_per_state, by = c("state.abb" = "RSTATE"))
+```
+<br>
+I find that no Asian Americans from South Dakota or Vermont were surveyed. A brief Wikipedia search tells me that the Asian American populations in both of these states are below 2%, and the populations of the states themselves are quite low. Although it would be interesting to analyze the state level data for these missing groups, since these are such a small portion of the sample, I do not believe the ommission of VT and SD will have a significant impact on my EDA.
+<br><br>
+
+## Demographics
+To determine the demographic breakdown of survey respondents, I first examine the distribution of `RETHNIC`, the column that represents race/ethnicity.
+```{r}
+#Investigate RETHNIC
+all_data_raw %>%
+  group_by(RACEETH) %>%
+  count() 
+```
+I find that non-Asian groups are also included in the data, likely for mixed race people. Although the impact of racial/ethnic identity on the behavior of mixed race people would be interesting to analyze, I will not be able to include it in the scope of my EDA. Thus, I disinclude non-Asian/Pacific Islander (NHPI) groups, and then plot the distribution of `RETHNIC`. Missing values are created by the removal of non-Asian groups, and they are dropped because they are not relevant to this analysis. 
+```{r}
+#Drop White, Black, and Latino from ethnicities to prepare data for visualization. 
+ethnicity_data <- all_data_raw %>%
+  #disinclude non-Asian races and ethnicites
+  filter(!RACEETH %in% c("(03) White", "(04) Black", "(06) Latino")) %>%
+  mutate(ethnicity = as.factor(str_sub(RACEETH, 6))) %>%
+  #rename ethnicities for higher quality plots
+  mutate(ethnicity = fct_recode(ethnicity, 
+                                "Vietnamese" = "vietnamese", 
+                                "Korean" = "korean", 
+                                "NHPI" = "NHPI",
+                                "Japaense" = "japanese", 
+                                "Hmong" = "hmong", 
+                                "Filipino" = "filipino", 
+                                "Chinese" = "chinese", 
+                                "Cambodian" = "cambodian", 
+                                "Asian Indian" = "asnindian")) %>%
+  #Black, White, and Latino have become NA values. Drop them. 
+  drop_na(ethnicity)
+
+#Bar graph of ethnicites
+ggplot(data = ethnicity_data) + geom_bar(aes(x = ethnicity, fill = ethnicity), na.rm = FALSE) + coord_flip()
+
+```
+<br>
+Notably, this survey is not proportionally representative of the breakdown of ethnicities nationally. This means we will be able to make more accurate observations about each group, as we have more data on them. Thus, ethnicity-specific analysis will be prevalent here. 
+
+```{r function}
+#Function to speed up creation of stacked bar charts in this section
+ethnicity_stacked_bar <- function(x, fill, x_lab, y_lab, fill_lab) {
+  ggplot(data = ethnicity_data) + 
+    geom_bar(aes(x = x, fill = fill), position = "stack") +
+    coord_flip() + 
+    xlab(x_lab) + 
+    ylab(y_lab) +
+    labs(fill = fill_lab)
+}
+```
+<br>
+```{r}
+#Education by Ethnicity
+#Clean up education factor
+ethnicity_data <- ethnicity_data %>%
+  #I will be repeating this substring operation on almost every plot. The data have a "(##)" prefix with each entry, a numerical indicator of the response. I don't need this in my plots, so I do this substring operation to remove it. 
+  mutate(EDUC3 = as.factor(str_sub(EDUC3, 5)))
+
+ethnicity_stacked_bar(ethnicity_data$ethnicity, ethnicity_data$EDUC3, "Ethnicity", "Count", "Highest Education Obtained")
+
+```
+<br>
+Above is a plot of the breakdown of education level for each ethnicity. Note the differing levels for each group. 
+<br>
+```{r}
+#Birthplace by ethnicity
+ethnicity_data <- ethnicity_data %>%
+  mutate(FORBORN = as.factor(str_sub(FORBORN, 5)))
+
+ethnicity_stacked_bar(ethnicity_data$ethnicity, ethnicity_data$FORBORN, "Ethnicity", "Count", "Birthplace")  
+
+#Gender by ethnicity
+ethnicity_data <- ethnicity_data %>%
+  mutate(S7 = as.factor(str_sub(S7, 5)))
+
+ethnicity_stacked_bar(ethnicity_data$ethnicity, ethnicity_data$S7, "Ethnicity", "Count", "Gender")
+
+```
+<br>
+Above, we have plots of of foreign/vs native born and gender for each ethnicity observed in the survey. This helps inform the population we are studying. 
+<br><br>
+
+## Party Affiliation
+Next, I examine party affiliations along a few different axes. 
+```{r covariation party and ethnicity}
+#Heat map expressing covariation between personal party identification and ethnicity
+ethnicity_data %>%
+  count(ethnicity, Q7_4A) %>%  
+  drop_na(Q7_4A) %>%
+  mutate(Q7_4A = fct_recode(Q7_4A, 
+                            "(2) Closer to neither party" = "(3) Closer to neither party", 
+                            "(3) Closer to the Democratic party" = "(2) Closer to the Democratic party")) %>%
+  ggplot(mapping = aes(y = ethnicity, x = Q7_4A)) +
+  geom_tile(mapping = aes(fill = n)) +
+  scale_fill_continuous(high = "#132B43", low = "#56B1F7") + 
+  ggtitle("Covariation: Party Affiliation and Ethnicity")
+```
+<br>
+The heatmap above shows us covariation between party identification and ethnicity. This is one of our first general trends: Asian Americans in general tend to identify as Democrats more than Republicans, but a significant number do not hold a salient party identity. This is expressed in another way below. As per the codebook, missing values have been converted to "Don't Know/Refused". 
+```{r}
+#Party Affiliation by Ethnicity
+ethnicity_data %>% 
+  mutate(Q7_1 = as.character(Q7_1)) %>%
+  #codebook
+  replace_na(list(Q7_1 = "(88) Don't Know/Refused")) %>%
+  mutate(Q7_1 = as.factor(Q7_1)) %>%
+  mutate(Q7_1 = fct_recode(Q7_1, 
+                           "(05) Don't think in terms of parties" = "(05) DO NOT READ  Do not think in terms of political parties", 
+                           "(04) Other party" = "(04) Other party  SPECIFY")) %>%
+  mutate(Q7_1 = as.character(Q7_1)) %>%
+  mutate(Q7_1 = str_sub(Q7_1, 5)) %>%
+  ggplot(aes(x = ethnicity, fill = Q7_1)) + 
+  geom_bar(position = "fill", alpha = 0.8) + 
+  labs(fill = "Response") +
+  ggtitle("Party Affiliation") +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br>
+Next, I facet by gender, birthplace, and level of education to see how that affects variation. 
+```{r}
+#Party affiliation by ethnicity and Gender
+ethnicity_data %>% 
+  mutate(Q7_1 = as.character(Q7_1)) %>%
+  #codebook
+  replace_na(list(Q7_1 = "(88) Don't Know/Refused")) %>%
+  mutate(Q7_1 = as.factor(Q7_1)) %>%
+  mutate(Q7_1 = fct_recode(Q7_1, 
+                           "(05) Don't think in terms of parties" = "(05) DO NOT READ  Do not think in terms of political parties", 
+                           "(04) Other party" = "(04) Other party  SPECIFY")) %>%
+  mutate(Q7_1 = as.character(Q7_1)) %>%
+  mutate(Q7_1 = str_sub(Q7_1, 5)) %>%
+  ggplot(aes(x = S7, fill = Q7_1)) + 
+  geom_bar(position = "fill", alpha = 0.8) + 
+  #facet wrap by ethnicity so we can look at gender varation within each group
+  facet_wrap(~ethnicity) +
+  labs(fill = "Response") +
+  ggtitle("Party Affiliation by Ethnicity and Gender") +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br> It seems that gender does not have a major impact within ethnic groups on party identification. 
+
+```{r}
+#Party affiliation by ethnicity and birthplace
+ethnicity_data %>% 
+  mutate(Q7_1 = as.character(Q7_1)) %>%
+  #codebook
+  replace_na(list(Q7_1 = "(88) Don't Know/Refused")) %>%
+  mutate(Q7_1 = as.factor(Q7_1)) %>%
+  mutate(Q7_1 = fct_recode(Q7_1, 
+                           "(05) Don't think in terms of parties" = "(05) DO NOT READ  Do not think in terms of political parties", 
+                           "(04) Other party" = "(04) Other party  SPECIFY")) %>%
+  mutate(Q7_1 = as.character(Q7_1)) %>%
+  mutate(Q7_1 = str_sub(Q7_1, 5)) %>%
+  ggplot(aes(x = FORBORN, fill = Q7_1)) + 
+  geom_bar(position = "fill", alpha = 0.8) + 
+  #facet by ethnicity so we can look at birthplace variation within each group
+  facet_wrap(~ethnicity) +
+  labs(fill = "Response") +
+  ggtitle("Party Affiliation by Ethnicity and Birthplace") +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br> There is more variation by birthplace, especially for Vietnamese, Chinese, and Korean American voters. This pattern should be explored further; perhaps there is some covariation between birthplace and other factors that result in this trend? I refrain from conjecture. 
+```{r}
+#Party Affiliation by level of education 
+ethnicity_data %>% 
+  mutate(Q7_1 = as.character(Q7_1)) %>%
+  #codebook
+  replace_na(list(Q7_1 = "(88) Don't Know/Refused")) %>%
+  mutate(Q7_1 = as.factor(Q7_1)) %>%
+  mutate(Q7_1 = fct_recode(Q7_1, 
+                           "(05) Don't think in terms of parties" = "(05) DO NOT READ  Do not think in terms of political parties", 
+                           "(04) Other party" = "(04) Other party  SPECIFY")) %>%
+  mutate(Q7_1 = as.character(Q7_1)) %>%
+  mutate(Q7_1 = str_sub(Q7_1, 5)) %>%
+  ggplot(aes(x = EDUC3, fill = Q7_1)) + 
+  geom_bar(position = "fill", alpha = 0.8) + 
+  #facet by ethnicity so we can look at variation between levels of education within each group
+  facet_wrap(~ethnicity) +
+  labs(fill = "Response") +
+  ggtitle("Party Affiliation by Level of Education and Ethnicity") +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+
+```
+<br>
+When I facet by level of education, even more interesting patterns emerge. Conventional wisdom holds that higher levels of education are associated with a higher likelihood to vote for left-leaning parties like the Democrats in the United States. However, some notable exceptions to that trend emerge in this plot. Filipino Americans stand out as being less likely to vote Democrat with higher levels of education, while Indian Americans' party affiliation seems to stay more steady at each level. 
+<br><br>
+
+## Issues
+In this section, I examine the issue priorities of Asian Americans, as well as their stances on specific policies. Depending on the issue, there can be significant variation by ethnicity. This is to be expected, as different ethnic groups inhabit vastly different socioeconomic strata in the United States. I will describe some of this variation below. This section showcases especially well why Asian Americans should not be treated as a political monolith. 
+<br>
+First, I examine the most important issues to Asian American voters in general. About a fifith of the data is missing, and the codebook does not report a good explanation for these missing values. Thus, I dropped them, but when reading these plots, we should keep in mind that they may not be totally representative. Furthermore, respondents were given multiple choices for "other" based on other survey questions; I have grouped them together for simplicity. 
+```{r}
+#missing value analysis
+ethnicity_data %>%
+  count(Q6_1D = factor(Q6_1D)) %>%
+  mutate(pct = prop.table(n)) %>% 
+  ggplot(aes(x = Q6_1D, y = pct, label = scales::percent(pct))) + geom_col() + coord_flip() + scale_y_continuous(labels = scales::percent)
+#About a fifth of our data is "NA". We can also group the "Other" categories together, and modify our labels to make this more accurate. According to the codebook, "NA" means the respondent didn't know, or refused to answer. 
+
+#Clean and replot:
+ethnicity_data %>%
+  mutate(Q6_1D = as.character(Q6_1D)) %>%
+  #Group other categories, the taxes thing is scratch work and can be ignored
+  mutate(Q6_1D = fct_recode(Q6_1D, 
+                            "Taxes" = "(12) ASLDF", 
+                            "(88) Other" = "(16) OTHQ6_1C:", 
+                            "(88) Other" = "(15) OTHQ6_1B:", 
+                            "(88) Other" = "(14) OTHQ6_1A:", 
+                            "(88) Other" = "(17) Other  SPECIFY")) %>%
+  #convert back to factor
+  mutate(Q6_1D = as.factor(str_sub(Q6_1D, 5))) %>%
+  count(Q6_1D = factor(Q6_1D)) %>%
+  #calculate percentages for each response
+  mutate(pct = prop.table(n)) %>% 
+  #drop don't know/refused answers. don't really affect this, and there are not that many
+  drop_na(Q6_1D) %>%
+  ggplot(aes(x = Q6_1D, y = pct, label = scales::percent(pct))) +
+  geom_col(fill = "blue") + 
+  xlab("Issues") +
+  ylab("Percentage") +
+  coord_flip() + 
+  #rescale y axis for percentages
+  scale_y_continuous(labels = scales::percent)
+```
+<br> Economic issues seem to be one of the most salient issues to Asian American voters, but economic concerns still only make up around 20% of those surveyed. There is wide variation by issue, and no clear pattern emerges from this plot. It does, however, showcase the diversity of issue priority among Asian Americans. We can break this down by ethnicity, which similarly showcases the diversity of Asian American priorities:
+```{r}
+#Most Important by Ethnicity
+ethnicity_data <- ethnicity_data %>%
+  mutate(Q6_1D = as.character(Q6_1D)) %>%
+  mutate(Q6_1D = fct_recode(Q6_1D, 
+                            "Taxes" = "(12) ASLDF", 
+                            "(88) Other" = "(16) OTHQ6_1C:", 
+                            "(88) Other" = "(15) OTHQ6_1B:", 
+                            "(88) Other" = "(14) OTHQ6_1A:", 
+                            "(88) Other" = "(17) Other  SPECIFY")) %>%
+  drop_na(Q6_1D)
+```
+<br>
+The above plots are effective in showcasing diversity, but there is too much variation to identify any trends. We can try to parse out trends by breaking down stances on specific policies by ethnicity. 
+```{r}
+#Healthcare: Obamacare
+ethnicity_data %>% 
+  mutate(Q6_5_1 = as.character(Q6_5_1)) %>%
+  #According to the codebook, NA means don't know/refused
+  replace_na(list(Q6_5_1 = "(3) Don't Know/Refused")) %>%
+  mutate(Q6_5_1 = as.factor(str_sub(Q6_5_1, 5))) %>%
+  ggplot(aes(x = ethnicity, fill = Q6_5_1)) + 
+  geom_bar(position = "fill") +
+  ggtitle("Healthcare: Obamacare") +
+  labs(fill = "Position") + 
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+
+#Healthcare followup: How would you rate your overall health in the past year?
+ethnicity_data %>% 
+  mutate(Q8_8 = as.character(Q8_8)) %>%
+  #According to the codebook, random sample of half of respondents were surveyed, so drop missing values and understand that this is only half of the respondents. 
+  drop_na(Q8_8) %>%
+  mutate(Q8_8 = as.factor(str_sub(Q8_8, 5))) %>%
+  ggplot(aes(x = ethnicity, fill = Q8_8)) + 
+  geom_bar(position = "fill", alpha = 0.9) +
+  ggtitle("Healthcare: Rate your overall health in the past year") +
+  labs(fill = "Response") + 
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br> Respondents were asked about their position on President Obama's signature healthcare legislation, the Affordable Care Act. They were also asked to rate their own health over the past year. The majority of each ethnic group indicated their support for the legislation; additionally, the majority reported being in at least "good" health. This may signify the importance of healthcare as an issue to Asian American voters as a whole, even if they do not self identify as being in poor health. 
+
+```{r}
+#Education: Federal Student Loan Relief 
+ethnicity_data %>% 
+  mutate(Q6_5_2 = as.character(Q6_5_2)) %>%
+  #According to the codebook, NA means don't know/refused
+  replace_na(list(Q6_5_2 = "(3) Don't Know/Refused")) %>%
+  mutate(Q6_5_2 = as.factor(str_sub(Q6_5_2, 5))) %>%
+  ggplot(aes(x = ethnicity, fill = Q6_5_2)) + 
+  geom_bar(position = "fill") +
+  ggtitle("Education: Federal Student Loan Relief") +
+  labs(fill = "Position") + 
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br>
+Subjects were asked about their support for major federal spending on student loan relief and assistance. The variation here is interesting; although Asian Americans are often stereotyped as highly valuing education, this plot reflects that there is significant variation between ethnic groups regarding upon whom the responsibility of financing higher education falls. Chinese Americans stand out for being the only group in which less than half of respondents expressed their support for this policy. This signals that Chinese Americans may believe the responsibility of paying for higher education falls on individuals and their families. The income level of each group may also be an explanatory variable here, but the the high Indian American support for this policy casts doubt on the strength of that explanation, as Indian Americans are one of the wealthiest ethnic groups in the United States. Further analysis is needed. 
+
+```{r}
+#Immigration: Syrian Refugees Entering US
+ethnicity_data %>% 
+  mutate(Q6_5_3 = as.character(Q6_5_3)) %>%
+  #According to the codebook, NA means don't know/refused
+  replace_na(list(Q6_5_3 = "(3) Don't Know/Refused")) %>%
+  mutate(Q6_5_3 = as.factor(str_sub(Q6_5_3, 5))) %>%
+  ggplot(aes(x = ethnicity, fill = Q6_5_3)) + 
+  geom_bar(position = "fill") +
+  ggtitle("Immigration: Syrian Refugees Entering US") +
+  labs(fill = "Position") + 
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br>
+Subjects were asked about their support for allowing Syrian refugees into the US. Interestingly, support amongst some Southeast Asian groups such as Vietnamese Americans, who have significant refugee populations, expressed lower support for this policy than groups such as Indian Americans, who have smaller refugee populations in the US. I'm not sure what's causing this, but it would be fascinating to explore. 
+
+```{r}
+#Criminal Justice: Marijuana Posession Demcriminalization (Small Amounts)
+ethnicity_data %>% 
+  mutate(Q6_5_4 = as.character(Q6_5_4)) %>%
+  #According to the codebook, NA means don't know/refused
+  replace_na(list(Q6_5_4 = "(3) Don't Know/Refused")) %>%
+  mutate(Q6_5_4 = as.factor(str_sub(Q6_5_4, 5))) %>%
+  ggplot(aes(x = ethnicity, fill = Q6_5_4)) + 
+  geom_bar(position = "fill") +
+  ggtitle("Criminal Justice: Marijuana Posession Demcriminalization (Small Amounts)") +
+  labs(fill = "Position") + 
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br>
+Subjects were asked about their support for the decriminalization of the possession of small amounts of marijuana. Notably, a minority of all groups oppose this policy. It seems that as a whole, Asian Americans are opposed to relaxed regulation of controlled substances, especially marijuana. 
+
+```{r}
+#Immigration: Trump Muslim Ban
+ethnicity_data %>% 
+  mutate(Q6_5_5 = as.character(Q6_5_5)) %>%
+  #According to the codebook, NA means don't know/refused
+  replace_na(list(Q6_5_5 = "(3) Don't Know/Refused")) %>%
+  mutate(Q6_5_5 = as.factor(str_sub(Q6_5_5, 5))) %>%
+  ggplot(aes(x = ethnicity, fill = Q6_5_5)) + 
+  geom_bar(position = "fill") +
+  ggtitle("Immigration: Trump Muslim Ban") +
+  labs(fill = "Position") + 
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br>
+Subjects were asked about their support for Donald Trump's ban on migration from predominantly Muslim countries. Most groups do not seem to support this policy. Indian Americans were the group that showed the most opposition to this policy, while Cambodian Americans stand out as having a majority support the policy. In Indian American communities, Islamophobia is a very salient issue, and a significant portion of Indian Americans are themselves Muslim, both of which may explain the high opposition to this policy. Further investigation into Cambodian American support for this policy is needed. 
+
+```{r}
+#Environment: Stricter Emissions Limits on Power Plants
+ethnicity_data %>% 
+  mutate(Q6_5_6 = as.character(Q6_5_6)) %>%
+  #According to the codebook, NA means don't know/refused
+  replace_na(list(Q6_5_6 = "(3) Don't Know/Refused")) %>%
+  mutate(Q6_5_6 = as.factor(str_sub(Q6_5_6, 5))) %>%
+  ggplot(aes(x = ethnicity, fill = Q6_5_6)) + 
+  geom_bar(position = "fill") +
+  ggtitle("Environment: Stricter Emissions Limits on Power Plants") +
+  labs(fill = "Position") + 
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br> Most Asian Americans seem to support stricter emissions regulations on power plants, potentially signalling broader concerns about environmental issues. However, the salience of this issue should also be considered when interpreting these results. 
+```{r}
+#Race: Government Promotion of Black-White Equality
+ethnicity_data %>% 
+  mutate(Q6_5_7 = as.character(Q6_5_7)) %>%
+  #According to the codebook, NA means don't know/refused
+  replace_na(list(Q6_5_7 = "(3) Don't Know/Refused")) %>%
+  mutate(Q6_5_7 = as.factor(str_sub(Q6_5_7, 5))) %>%
+  ggplot(aes(x = ethnicity, fill = Q6_5_7)) + 
+  geom_bar(position = "fill") +
+  ggtitle("Race: Government Promotion of Black-White Equality") +
+  labs(fill = "Position") + 
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+
+```
+<br> Most Asian Americans seem to support government action to promote Black-White equality, potentially signalling broader concerns about racial justice issues. However, the salience of this issue should also be considered when interpreting these results. 
+<br>
+<br>
+
+## Political/Civic Behavior
+<br>
+In this section, I address the political and civic behavior of Asian Americans. I begin by addressing engagement: how engaged do Asian Americans feel with the political process, and how do they engage in civic and political life? Who contacts Asian Americans about political issues? Then, I examine the voting patterns of the various ethnic groups within Asian America. 
+<br>
+First, I examine feelings of disengagement. There is a lot of missing data here; 28% of the data is missing with no explanation. 11% responded "Don't know/Refused:. 
+```{r}
+#Disengagement
+#Politics/Government too Complicated
+#11% of missing values from don't know/refused. 28% total missing values--a lot
+
+ethnicity_data %>%
+  ggplot(aes(ethnicity, fill = Q6_6A)) + geom_bar()
+#This is left in because to show that there is a large number of missing values, so take the next with a grain of salt. 
+
+ethnicity_data %>%
+  mutate(Q6_6A = as.character(Q6_6A)) %>%
+  mutate(Q6_6A = as.factor(str_sub(Q6_6A, 5))) %>%
+  drop_na(Q6_6A) %>%
+  ggplot(aes(x = ethnicity, fill = Q6_6A)) + 
+    geom_bar(position = "fill") + 
+    labs(fill = "Response") +
+    ggtitle("Too Complicated by Ethnicity") +
+    scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+    coord_flip()
+
+#Politicians Don't Care About Someone Like Me
+ethnicity_data %>%
+  ggplot(aes(ethnicity, fill = Q6_6A)) + geom_bar()
+#This is left in because to show that there is a large number of missing values, so take the next with a grain of salt. 
+
+ethnicity_data %>%
+  mutate(Q6_6B = as.character(Q6_6B)) %>%
+  mutate(Q6_6B = as.factor(str_sub(Q6_6B, 5))) %>%
+  drop_na(Q6_6B) %>%
+  ggplot(aes(x = ethnicity, fill = Q6_6B)) + 
+  geom_bar(position = "fill") + 
+  labs(fill = "Response") +
+  ggtitle("Politicians Don't Care About Someone Like Me by Ethnicity") +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br>
+Subjects were asked to respond to the statements "Politics/government is too complicated for someone like me to understand" and "Politicians don't care about someone like me". From the results above, we can see that even despite the missing values, there is a clear feeling of disengagement with politics among Asian Americans, with the majority of each group responding at least "Neither agree nor disagree". This is an important finding, because it shows that the American political process has not effectively incorporated the country's fastest growing racial group. 
+<br>
+Next, I examine how often Asian Americans are contacted by the major political parties, and for those who are contacted, which party reaches out most frequently. 
+```{r}
+#Political Party Contact by Ethnicity
+ethnicity_data %>%
+  mutate(Q5_5 = as.character(Q5_5)) %>%
+  #missing values are don't know refused, and there are relatively few. dropped. 
+  drop_na(Q5_5) %>%
+  ggplot(aes(x = ethnicity, fill = Q5_5)) + 
+  geom_bar(position = "fill") + 
+  ggtitle("Have you been contacted by a major political party?") +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  labs(fill = "Response") +
+  coord_flip()
+```
+<br>
+This confirms the feelings of disengagement described earlier. The vast majority of respondents in each group responded that they had not been contacted by a political party, and it seems that NHPI and Southeast Asian Americans are even less likely to be contacted than their East and South Asian counterparts. 
+```{r}
+#Contact by Party
+ethnicity_data %>%
+  mutate(Q5_5A = as.character(Q5_5A)) %>%
+  mutate(Q5_5A = as.factor(str_sub(Q5_5A, 5))) %>%
+  #missing values are people that have not been contacted 
+  drop_na(Q5_5A) %>%
+  ggplot(aes(x = Q5_5A, fill = Q5_5A)) + 
+  geom_bar() + 
+  xlab("Party") +
+  labs(fill = "Part") +
+  theme(legend.position = "none") +
+  ggtitle("Contact by Party") +
+  coord_flip()
+```
+<br>
+The Democratic party seems to be more likely to reach out to Asian Americans than the Republican party. 
+<br>
+I turn now to voting behavior. It is important to note that these responses are from respondents that they were registered to vote in the upcoming election at the time they were surveyed. 
+```{r}
+#Voting in General Election by Ethnicity
+ethnicity_data %>%
+  mutate(Q4_2 = as.character(Q4_2)) %>%
+  #replace missing values with don't know/refused (codebook says that accounts for NA values)
+  replace_na(list(Q4_2 = "(88)Don't Know/Refused")) %>%
+  mutate(Q4_2 = as.factor(str_sub(Q4_2, 5))) %>%
+  ggplot(aes(x = ethnicity, fill = Q4_2)) + 
+  geom_bar(position = "fill") + 
+  labs(fill = "Response") +
+  ggtitle("Planning to Vote in General Election by Ethnicity") +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br>
+Respondents indicated that for the most party, they intended to vote in the general (presidential) election. However, Hmong and Cambodian Americans stand out as much less likely to indicate that they planned to vote in the general election than other groups. 
+
+```{r}
+#Voting in General Election by Ethnicity
+ethnicity_data %>%
+  mutate(Q4_2 = as.character(Q4_2)) %>%
+  #replace missing values with don't know/refused (codebook says that accounts for NA values)
+  replace_na(list(Q4_2 = "(88)Don't Know/Refused")) %>%
+  mutate(Q4_2 = as.factor(str_sub(Q4_2, 5))) %>%
+  ggplot(aes(x = ethnicity, fill = Q4_2)) + 
+  geom_bar(position = "fill") + 
+  labs(fill = "Response") +
+  ggtitle("Planning to Vote in General Election by Ethnicity") +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) + 
+  coord_flip()
+```
+<br>
+Respondents in general are less likely to particpate in a primary or caucus than a general election. Again, Cambodian and Hmong Americans are outliers, but stand out less than in the previous plot. 
+<br>
+Finally, I examine how Asian Americans engage in civic life. Respondents were asked to indicate whether or not they participated in a number of different civic activities, and the results are outlined below. 
+```{r}
+#engagement
+#Q5_1_01 through 9
+ethnicity_data %>%
+  #the response to each category was in a different column, so first select the relevant columns
+  dplyr::select(c(ethnicity, Q5_1_01, Q5_1_02, Q5_1_03, Q5_1_04,Q5_1_05,Q5_1_06, Q5_1_08, Q5_1_09)) %>% 
+  #gather responses into one column so that they can be plotted
+  gather("Question", ethnicity) %>%
+  #codebook
+  replace_na(list(ethnicity = "(3) Don't Know/Refused")) %>%
+  #standard cleaning, described at beginning
+  mutate(ethnicity = as.factor(str_sub(ethnicity, 5))) %>%
+  #convert question to factor, levels imputed from data work well
+  mutate(Question = as.factor(Question)) %>%
+  #appropriately label each level so that they can be interpreted without the codebook
+  mutate(Question = fct_recode(Question, 
+                               "Discussed politics w/ \nfamily & friends" = "Q5_1_01",  
+                               "Contributed money to a candidate, political party, \nor some other campaign organization" = "Q5_1_02", 
+                               "Contacted your representative \nor a government official" = "Q5_1_03", 
+                               "Worked with others in your community \nto solve a problem" = "Q5_1_04", 
+                               "Attended a protest march, \ndemonstration, or rally" = "Q5_1_05", 
+                               "Signed a petition" = "Q5_1_06", 
+                               "Attended a public meeting, \nsuch as for school board \nor city council" = "Q5_1_08", 
+                               "Donated money to a religious \nor charitable cause " = "Q5_1_09")) %>%
+  ggplot(mapping = aes(Question, fill = ethnicity)) + 
+    geom_bar() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    #i picked gray for NA, green for yes, and red for no to make legibility higher
+    scale_fill_manual(values=c("#808080", "#ff0000", "#00ff00")) +
+    labs(fill = "Response") +
+    ggtitle("Engagement") 
+```
+<br> As we noted earlier, feelings of engagement in civic and political life tend to be low among Asian Americans. The two civic activities they seemed to be most involved in are discussing politics in comfortable, familial/friendly environments, and making donations to charitable/religious/community organizations. 
+
+## Conclusions
+Asian Americans are a rapidly growing group, and have the potential to wield significant political power. However, this EDA exposes a few key findings. First, there are some general trends that can be identified: they are more likely to identify with the Democratic party than others, but the high level of voters identifying as independents indicates that they do not have strong party identifications; and they generally feel disengaged from the political process and civic life. Second, and perhaps more importantly: Asian Americans should not be treated as a monolith. Different ethnicities have different stances on a variety of policy issues, and breaking ethnicity down by gender, birthplace, and level of education reveals even more variation. 
+<br>
+This EDA was a fairly sufficient in exploring the results of NAAS16. However, there are many more ways in which this data can be analyzed. The more granular analysis of this data that is conducted, the more granular our understanding of Asian American politics becomes. With a better understanding, they can be more effectively incorporated into American political and civil life resulting in a more inclusive and representative democracy. 
+
+
+
+
+

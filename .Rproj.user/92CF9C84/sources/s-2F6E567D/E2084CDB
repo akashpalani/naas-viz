@@ -1,0 +1,27 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1576109781630.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "E2084CDB",
+    "lastKnownWriteTime" : 1576211049,
+    "last_content_update" : 1576211049500,
+    "path" : "~/Data_Science/Data_Science_1/Final_Project/final_rough.R",
+    "project_path" : "final_rough.R",
+    "properties" : {
+        "cursorPosition" : "344,0",
+        "docOutlineVisible" : "1",
+        "scrollLine" : "342",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
